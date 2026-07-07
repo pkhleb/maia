@@ -15,7 +15,7 @@ local machine (CLI) → vLLM inference server (RunPod) → Qwen2.5-Coder-7B-Inst
 ## Technical Highlights
 
 ### Self-Hosted Inference
-Runs against a self-hosted [vLLM](https://github.com/vllm-project/vllm) endpoint serving `Qwen/Qwen2.5-Coder-7B-Instruct` on a RunPod RTX 4090. Exposes an OpenAI-compatible API, making the inference backend swappable without changing application code.
+Runs against a self-hosted [vLLM](https://github.com/vllm-project/vllm) endpoint serving `Qwen/Qwen2.5-Coder-7B-Instruct` on a RunPod RTX PRO 4500. Exposes an OpenAI-compatible API, making the inference backend swappable without changing application code.
 
 ### AST-Based Context Retrieval
 Rather than naively dumping the entire codebase into the context window on every request, maia builds a structured representation of the project at startup using Python's `ast` module:
@@ -59,7 +59,7 @@ maia/
 ### 1. Deploy vLLM on RunPod
 
 Create a pod with:
-- **GPU:** RTX 4090 (24GB VRAM)
+- **GPU:** RTX PRO 4500 (32 GB VRAM)
 - **Container image:** `vllm/vllm-openai:v0.6.6`
 - **Start command:**
   ```
