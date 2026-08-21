@@ -1,3 +1,5 @@
+.retlib/*
+.env
 .venv/*
 __pycache__
 history.json
