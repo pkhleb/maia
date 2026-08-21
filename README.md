@@ -108,7 +108,7 @@ Full control over context window size, inference parameters, and model selection
 Decoupling retrieval from the assistant makes both components independently testable and reusable. retlib has its own test suite (146 tests) and can be pointed at any Python codebase.
 
 **Why hybrid BM25 + vector search?**
-Neither alone is sufficient. BM25 handles exact name matches ("fix parse_file") while vector search handles semantic queries ("how does authentication work"). The weighted combination with graph expansion outperforms either in isolation.
+Neither alone is sufficient. BM25 handles exact name matches ("fix parse_file") while vector search handles semantic queries ("how does authentication work").
 
 **Why a sliding window + summary over full history?**
 Sending full conversation history causes prompt tokens to grow linearly. Summarization compresses older context while preserving semantic continuity — a common pattern in production LLM applications.
