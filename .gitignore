@@ -1,5 +1,7 @@
+.maia_pod_state
 .retlib/*
 .env
 .venv/*
 __pycache__
 history.json
+.qwen_history.json
