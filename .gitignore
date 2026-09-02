@@ -4,4 +4,5 @@
 .venv/*
 __pycache__
 history.json
-.qwen_history.json
+.maia_history.json
+.maia*
