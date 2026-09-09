@@ -4,7 +4,7 @@ import json
 from dotenv import load_dotenv
 import argparse
 from model import call_model, ModelResult
-from context_ret_and_gen import self_refine, rag
+from context_ret_and_gen import self_refine, rag, token_rag, peak_span
 from observability import Observer
 
 # ── args ──────────────────────────────────────────────────────────────────────
@@ -16,6 +16,8 @@ parser.add_argument("-o", "--obs", nargs="*", default=[], metavar="COMPONENT",
                          "or individual: tokens messages critique retrieval context memory")
 parser.add_argument("--refine", type=int, default=0, metavar="N",
                     help="run self-refine with N iterations (default: 0 = disabled)")
+parser.add_argument("--token", action=argparse.BooleanOptionalAction, default=False,
+                    help="run with token based scoring")
 args = parser.parse_args()
 
 
@@ -41,20 +43,14 @@ def save_history(history: list):
 def build_messages(history: list, working_dir: str | None) -> list:
     excluded = {".env", ".venv", "__pycache__", ".git", ".gitignore", ".maia_index.db"}
 
-    files = {}
-
-    print(working_dir)
     if working_dir:
+        file_paths = []
         for root, dirs, filenames in os.walk(working_dir):
             dirs[:] = [d for d in dirs if d not in excluded]
             for filename in filenames:
                 if filename in excluded:
                     continue
-                path = os.path.join(root, filename)
-
-                with open(path, "r", encoding="utf-8") as f:
-                    print(path)
-                    files[path] = f.read()
+                file_paths.append(os.path.join(root, filename))
 
         DEFAULT_SETTINGS = {
             "name": "flat-512",
@@ -64,7 +60,18 @@ def build_messages(history: list, working_dir: str | None) -> list:
             "embedder": "all-MiniLM-L6-v2",
             "top_k":3,
         }
-        system = rag(files=files, query=history[-1], settings=DEFAULT_SETTINGS, obs=obs)
+        DEFAULT_TOKEN_SETTINGS = {
+            "name": "token-128/96",
+            "chunker": "fixed",
+            "chunk_size": 128,
+            "overlap": 96,
+            "embedder": "all-MiniLM-L6-v2",
+            "top_k":3
+        }
+        if args.token:
+            heatmaps = token_rag(file_paths, query=history[-1], settings=DEFAULT_SETTINGS, obs=obs)
+            print(peak_span("/root/maia/maia.py", heatmaps["/root/maia/maia.py"], 512))
+        system = rag(file_paths=file_paths, query=history[-1], settings=DEFAULT_TOKEN_SETTINGS, obs=obs)
     else:
         system = ""
     messages = [{"role": "system", "content": system}] + list(history)
@@ -84,7 +91,7 @@ def get_response(messages: list) -> tuple[str, list[ModelResult]]:
 
     if args.refine > 0:
         obs("critique", "self_refine — initial response", result.reply)
-        refined_reply, intermediate = self_refine(result.reply, iterations=args.refine, obs=obs)
+        refined_reply, intermediate = self_refine(reply=result.reply, iterations=args.refine, obs=obs)
         results += intermediate
         return refined_reply, results
 

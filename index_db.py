@@ -55,13 +55,28 @@ CREATE TABLE IF NOT EXISTS edges (
     UNIQUE(index_id, source_id, target_id, kind)
 );
 
-CREATE INDEX IF NOT EXISTS idx_files_index    ON files(index_id);
-CREATE INDEX IF NOT EXISTS idx_files_path     ON files(index_id, path);
-CREATE INDEX IF NOT EXISTS idx_nodes_index    ON nodes(index_id);
-CREATE INDEX IF NOT EXISTS idx_nodes_file     ON nodes(file_id);
-CREATE INDEX IF NOT EXISTS idx_edges_source   ON edges(source_id);
-CREATE INDEX IF NOT EXISTS idx_edges_target   ON edges(target_id);
-CREATE INDEX IF NOT EXISTS idx_edges_kind     ON edges(index_id, kind);
+CREATE TABLE IF NOT EXISTS query_runs (
+    query_run_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    index_id        INTEGER NOT NULL REFERENCES indexes(id) ON DELETE CASCADE,
+    query_text      TEXT NOT NULL,
+    settings_json   TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS chunk_scores (
+    query_run_id    INTEGER NOT NULL REFERENCES query_runs(query_run_id) ON DELETE CASCADE,
+    node_id         INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    score           REAL NOT NULL,
+    PRIMARY KEY (query_run_id, node_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_files_index      ON files(index_id);
+CREATE INDEX IF NOT EXISTS idx_files_path       ON files(index_id, path);
+CREATE INDEX IF NOT EXISTS idx_nodes_index      ON nodes(index_id);
+CREATE INDEX IF NOT EXISTS idx_nodes_file       ON nodes(file_id);
+CREATE INDEX IF NOT EXISTS idx_edges_source     ON edges(source_id);
+CREATE INDEX IF NOT EXISTS idx_edges_target     ON edges(target_id);
+CREATE INDEX IF NOT EXISTS idx_edges_kind       ON edges(index_id, kind);
+CREATE INDEX IF NOT EXISTS idx_query_runs_index ON query_runs(index_id);
 """
 
 
@@ -95,6 +110,7 @@ def init_db(db_path: str = DEFAULT_DB_PATH):
     """Create the database and schema if they don't exist."""
     with _connect(db_path) as conn:
         conn.executescript(SCHEMA)
+
 
 
 def create_index(name: str, config: dict, db_path: str = DEFAULT_DB_PATH) -> int:
@@ -149,6 +165,17 @@ def delete_index(name: str, db_path: str = DEFAULT_DB_PATH):
     with _connect(db_path) as conn:
         conn.execute("DELETE FROM indexes WHERE name = ?", (name,))
 
+def create_query_run(index_id: int, query_text: str, settings: dict, db_path: str = DEFAULT_DB_PATH) -> int:
+    """
+    Log a new query run - one query scored against one chunker/settings configuration.
+    Returns the query_run_id.
+    """
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            "INSERT INTO query_runs (index_id, query_text, settings_json) VALUES (?, ?, ?)",
+            (index_id, query_text, json.dumps(settings))
+        )
+        return cursor.lastrowid
 
 def get_file_checksum(index_id: int, path: str, db_path: str = DEFAULT_DB_PATH) -> str | None:
     """Return the stored checksum for a file in an index, or None if not indexed."""
@@ -224,6 +251,63 @@ def insert_nodes(
             ids.append(cursor.lastrowid)
         return ids
 
+def insert_chunk_scores(
+    query_run_id: int,
+    scores: list[dict],
+    db_path: str = DEFAULT_DB_PATH,
+    ) -> None:
+    """
+    Bulk insert chunk scores for a query run.
+    Each entry in `scores`: {"node_id": int, "score": float}
+    """
+    with _connect(db_path) as conn:
+        conn.executemany(
+            "INSERT INTO chunk_scores (query_run_id, node_id, score) VALUES (?, ?, ?)",
+            [(query_run_id, s["node_id"], s["score"]) for s in scores],
+        )
+
+def get_scores_for_query_run(query_run_id: int, db_path: str = DEFAULT_DB_PATH) -> list[dict]:
+    """All (node_id, score) pairs for a given query run, joined with node text/metadata."""
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT cs.node_id, cs.score, n.text, n.metadata
+            FROM chunk_scores cs
+            JOIN nodes n ON n.id = cs.node_id
+            WHERE cs.query_run_id = ?
+            """,
+            (query_run_id,)
+        ).fetchall()
+        return [
+            {
+                "node_id": r["node_id"],
+                "score": r["score"],
+                "text": r["text"],
+                "metadata": json.loads(r["metadata"]),
+            }
+            for r in rows
+        ]
+
+def get_query_runs(
+    index_id: int,
+    db_path: str = DEFAULT_DB_PATH,
+    query_text: str | None = None,
+) -> list[dict]:
+    """
+    List query runs for an index, optionally filtered to a specific query text
+    lets you pull up every chunker/settings variant you've run against the same query.
+    """
+    with _connect(db_path) as conn:
+        sql = "SELECT * FROM query_runs WHERE index_id = ?"
+        params = [index_id]
+        if query_text is not None:
+            sql += " AND query_text = ?"
+            params.append(query_text)
+        sql += " ORDER BY created_at DESC"
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+
 
 def update_node_embedding(node_id: int, embedding: np.ndarray, db_path: str = DEFAULT_DB_PATH):
     """Store or update the embedding for a node."""
@@ -288,7 +372,6 @@ def insert_edges(index_id: int, edges: list[dict], db_path: str = DEFAULT_DB_PAT
             [(index_id, e["source_id"], e["target_id"], e["kind"]) for e in edges]
         )
 
-
 def get_neighbors(
     node_id: int,
     index_id: int,
@@ -346,6 +429,7 @@ def get_neighbors(
             }
             for r in rows
         ]
+
 
 
 def stats(db_path: str = DEFAULT_DB_PATH) -> dict:
