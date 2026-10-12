@@ -68,10 +68,15 @@ def build_messages(history: list, working_dir: str | None) -> list:
             "embedder": "all-MiniLM-L6-v2",
             "top_k":3
         }
+        DEFAULT_AST_CONFIG = {
+            "chunker": "ast",
+            "embedder": "all-MiniLM-L6-v2", 
+            "name": "ast-py"
+        }
         if args.token:
-            heatmaps = token_rag(file_paths, query=history[-1], settings=DEFAULT_SETTINGS, obs=obs)
-            print(peak_span("/root/maia/maia.py", heatmaps["/root/maia/maia.py"], 512))
-        system = rag(file_paths=file_paths, query=history[-1], settings=DEFAULT_TOKEN_SETTINGS, obs=obs)
+            heatmaps = token_rag(file_paths, query=history[-1], settings=DEFAULT_TOKEN_SETTINGS, obs=obs)
+            #print(peak_span("/root/maia/maia.py", heatmaps["/root/maia/maia.py"], 512))
+        system = rag(file_paths=file_paths, query=history[-1], settings=DEFAULT_SETTINGS, obs=obs)
     else:
         system = ""
     messages = [{"role": "system", "content": system}] + list(history)

@@ -85,6 +85,8 @@ class SymbolVisitor(ast.NodeVisitor):
             docstring=self._get_docstring(node),
         )
         self.symbols.append(symbol)
+        self._scope_stack.append(qualified_name)
+        self.generic_visit(node)
 
         self._scope_stack.pop()
 

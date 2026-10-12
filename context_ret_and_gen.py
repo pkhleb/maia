@@ -166,21 +166,29 @@ def _fixed_chunk(file_path: str, settings: dict) -> list[dict]:
     while start < len(token_ids):
         end = min(start + chunk_size, len(token_ids))
         chunk_ids = token_ids[start:start + chunk_size]
+        chunk_text = _tokenizer.decode(chunk_ids)
+        
+        prefix_text = _tokenizer.decode(token_ids[:start])
+        start_line = prefix_text.count("\n") + 1
+        end_line = start_line + chunk_text.count("\n")
+
         chunks.append({
-            "text": _tokenizer.decode(chunk_ids),
+            "text": chunk_text,
             "metadata": {
                 "path": file_path, 
                 "chunk_kind": "fixed",
                 "start_token": start,
                 "end_token": end,
                 "num_tokens_in_file": len(token_ids),
+                "start_line": start_line,
+                "end_line": end_line,
             },
         })
         start += chunk_size - overlap
     return chunks
 
 def _ast_chunk(file_path: str, settings: dict) -> list[dict]:
-    result = parser.parse_file(file_path)
+    result = parse_file(file_path)
     return [
         {
             "text": sym.source,
@@ -194,6 +202,7 @@ def _ast_chunk(file_path: str, settings: dict) -> list[dict]:
             },
         }
         for sym in result.symbols
+        if sym.kind != "module"
     ]
 
 CHUNKERS = {"fixed": _fixed_chunk, "ast": _ast_chunk}
@@ -205,6 +214,9 @@ def _index(file_paths: list[str], settings: dict) -> None:
         raise ValueError(f"unknown chunker: {settings['chunker']}")
 
     for path in file_paths:
+        if settings["chunker"] == "ast" and not path.endswith(".py"):
+            continue
+
         checksum = hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
         if get_file_checksum(index_id, path, DB_PATH) == checksum:
